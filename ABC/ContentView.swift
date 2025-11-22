@@ -22,14 +22,35 @@ class TonePlayer: ObservableObject {
         }
         #endif
 
-        // 2. attach + 用 mixer 的格式连接
-        engine.attach(player)
-
         let mixer = engine.mainMixerNode
         let mixerFormat = mixer.outputFormat(forBus: 0)   // 一般是 2 声道 + 当前设备采样率
-        self.audioFormat = mixerFormat
+        let sampleRate = mixerFormat.sampleRate
 
-        engine.connect(player, to: mixer, format: mixerFormat)
+        sourceNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
+            guard let self = self else { return noErr }
+
+            let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
+            let phaseIncrement = (2 * Double.pi * self.frequency) / sampleRate
+
+            for frame in 0..<Int(frameCount) {
+                let sample = Float(sin(self.phase) * self.amplitude)
+                self.phase += phaseIncrement
+
+                if self.phase > 2 * Double.pi {
+                    self.phase -= 2 * Double.pi
+                }
+
+                for buffer in ablPointer {
+                    let ptr = buffer.mData!.assumingMemoryBound(to: Float.self)
+                    ptr[frame] = sample
+                }
+            }
+
+            return noErr
+        }
+
+        engine.attach(sourceNode)
+        engine.connect(sourceNode, to: mixer, format: mixerFormat)
 
         // 3. 启动 engine
         do {
