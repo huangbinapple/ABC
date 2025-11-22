@@ -5,8 +5,11 @@ import Combine
 
 class TonePlayer: ObservableObject {
     private let engine = AVAudioEngine()
-    private let player = AVAudioPlayerNode()
-    private let audioFormat: AVAudioFormat
+    private let sourceNode: AVAudioSourceNode
+    private var phase: Double = 0
+    private var frequency: Double = 0
+    private var amplitude: Double = 0
+    @Published private(set) var isPlaying = false
 
     init() {
         // 1. iOS 上必须先配置 AVAudioSession
@@ -20,14 +23,35 @@ class TonePlayer: ObservableObject {
         }
         #endif
 
-        // 2. attach + 用 mixer 的格式连接
-        engine.attach(player)
-
         let mixer = engine.mainMixerNode
         let mixerFormat = mixer.outputFormat(forBus: 0)   // 一般是 2 声道 + 当前设备采样率
-        self.audioFormat = mixerFormat
+        let sampleRate = mixerFormat.sampleRate
 
-        engine.connect(player, to: mixer, format: mixerFormat)
+        sourceNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
+            guard let self = self else { return noErr }
+
+            let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
+            let phaseIncrement = (2 * Double.pi * self.frequency) / sampleRate
+
+            for frame in 0..<Int(frameCount) {
+                let sample = Float(sin(self.phase) * self.amplitude)
+                self.phase += phaseIncrement
+
+                if self.phase > 2 * Double.pi {
+                    self.phase -= 2 * Double.pi
+                }
+
+                for buffer in ablPointer {
+                    let ptr = buffer.mData!.assumingMemoryBound(to: Float.self)
+                    ptr[frame] = sample
+                }
+            }
+
+            return noErr
+        }
+
+        engine.attach(sourceNode)
+        engine.connect(sourceNode, to: mixer, format: mixerFormat)
 
         // 3. 启动 engine
         do {
@@ -38,39 +62,20 @@ class TonePlayer: ObservableObject {
         }
     }
 
-    func playTone(frequency: Double, duration: Double = 0.6) {
+    func startTone(frequency: Double) {
         guard engine.isRunning else {
             print("Engine is not running")
             return
         }
 
-        let sampleRate = audioFormat.sampleRate
-        let frameCount = AVAudioFrameCount(duration * sampleRate)
+        self.frequency = frequency
+        self.amplitude = 0.35
+        isPlaying = true
+    }
 
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: audioFormat,
-                                            frameCapacity: frameCount) else { return }
-
-        buffer.frameLength = frameCount
-
-        guard let channels = buffer.floatChannelData else { return }
-        let channelCount = Int(audioFormat.channelCount)
-
-        // 生成一个正弦波，并写入所有声道
-        for frame in 0..<Int(frameCount) {
-            let value = sin(2 * .pi * frequency * Double(frame) / sampleRate)
-            let sample = Float(value * 0.35)
-
-            for ch in 0..<channelCount {
-                channels[ch][frame] = sample
-            }
-        }
-
-        // 安排播放
-        player.scheduleBuffer(buffer, at: nil, options: .interrupts, completionHandler: nil)
-
-        if !player.isPlaying {
-            player.play()
-        }
+    func stopTone() {
+        amplitude = 0
+        isPlaying = false
     }
 }
 
@@ -78,42 +83,61 @@ class TonePlayer: ObservableObject {
 
 struct ContentView: View {
     @StateObject private var tonePlayer = TonePlayer()
+    @State private var activeFrequency: Double?
 
     private let gFrequency = 392.0  // G4
     private let fFrequency = 349.23 // F4
 
     var body: some View {
         VStack(spacing: 32) {
-            Text("Tap to play notes")
+            Text("Press and hold to play notes")
                 .font(.title2)
                 .fontWeight(.semibold)
 
             HStack(spacing: 24) {
-                Button {
-                    tonePlayer.playTone(frequency: gFrequency)
-                } label: {
+                Button(action: {}) {
                     VStack(spacing: 8) {
                         Text("G")
                             .font(.largeTitle.bold())
-                        Text("+")
-                            .font(.headline)
                     }
                     .frame(maxWidth: .infinity, minHeight: 120)
                 }
                 .buttonStyle(.borderedProminent)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { _ in
+                            if activeFrequency != gFrequency {
+                                activeFrequency = gFrequency
+                                tonePlayer.startTone(frequency: gFrequency)
+                            }
+                        }
+                        .onEnded { _ in
+                            activeFrequency = nil
+                            tonePlayer.stopTone()
+                        }
+                )
 
-                Button {
-                    tonePlayer.playTone(frequency: fFrequency)
-                } label: {
+                Button(action: {}) {
                     VStack(spacing: 8) {
                         Text("F")
                             .font(.largeTitle.bold())
-                        Text("-")
-                            .font(.headline)
                     }
                     .frame(maxWidth: .infinity, minHeight: 120)
                 }
                 .buttonStyle(.borderedProminent)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { _ in
+                            if activeFrequency != fFrequency {
+                                activeFrequency = fFrequency
+                                tonePlayer.startTone(frequency: fFrequency)
+                            }
+                        }
+                        .onEnded { _ in
+                            activeFrequency = nil
+                            tonePlayer.stopTone()
+                        }
+                )
             }
         }
         .padding()
