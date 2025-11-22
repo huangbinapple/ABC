@@ -7,6 +7,8 @@ class TonePlayer: ObservableObject {
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private let audioFormat: AVAudioFormat
+    private var currentFrequency: Double?
+    @Published private(set) var isPlaying = false
 
     init() {
         // 1. iOS 上必须先配置 AVAudioSession
@@ -38,14 +40,18 @@ class TonePlayer: ObservableObject {
         }
     }
 
-    func playTone(frequency: Double, duration: Double = 0.6) {
+    func startTone(frequency: Double) {
         guard engine.isRunning else {
             print("Engine is not running")
             return
         }
 
+        if currentFrequency == frequency && isPlaying { return }
+
+        stopTone()
+
         let sampleRate = audioFormat.sampleRate
-        let frameCount = AVAudioFrameCount(duration * sampleRate)
+        let frameCount = AVAudioFrameCount(sampleRate)
 
         guard let buffer = AVAudioPCMBuffer(pcmFormat: audioFormat,
                                             frameCapacity: frameCount) else { return }
@@ -65,12 +71,17 @@ class TonePlayer: ObservableObject {
             }
         }
 
-        // 安排播放
-        player.scheduleBuffer(buffer, at: nil, options: .interrupts, completionHandler: nil)
+        player.scheduleBuffer(buffer, at: nil, options: [.loops, .interrupts], completionHandler: nil)
+        player.play()
 
-        if !player.isPlaying {
-            player.play()
-        }
+        currentFrequency = frequency
+        isPlaying = true
+    }
+
+    func stopTone() {
+        player.stop()
+        currentFrequency = nil
+        isPlaying = false
     }
 }
 
@@ -78,42 +89,61 @@ class TonePlayer: ObservableObject {
 
 struct ContentView: View {
     @StateObject private var tonePlayer = TonePlayer()
+    @State private var activeFrequency: Double?
 
     private let gFrequency = 392.0  // G4
     private let fFrequency = 349.23 // F4
 
     var body: some View {
         VStack(spacing: 32) {
-            Text("Tap to play notes")
+            Text("Press and hold to play notes")
                 .font(.title2)
                 .fontWeight(.semibold)
 
             HStack(spacing: 24) {
-                Button {
-                    tonePlayer.playTone(frequency: gFrequency)
-                } label: {
+                Button(action: {}) {
                     VStack(spacing: 8) {
                         Text("G")
                             .font(.largeTitle.bold())
-                        Text("+")
-                            .font(.headline)
                     }
                     .frame(maxWidth: .infinity, minHeight: 120)
                 }
                 .buttonStyle(.borderedProminent)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { _ in
+                            if activeFrequency != gFrequency {
+                                activeFrequency = gFrequency
+                                tonePlayer.startTone(frequency: gFrequency)
+                            }
+                        }
+                        .onEnded { _ in
+                            activeFrequency = nil
+                            tonePlayer.stopTone()
+                        }
+                )
 
-                Button {
-                    tonePlayer.playTone(frequency: fFrequency)
-                } label: {
+                Button(action: {}) {
                     VStack(spacing: 8) {
                         Text("F")
                             .font(.largeTitle.bold())
-                        Text("-")
-                            .font(.headline)
                     }
                     .frame(maxWidth: .infinity, minHeight: 120)
                 }
                 .buttonStyle(.borderedProminent)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { _ in
+                            if activeFrequency != fFrequency {
+                                activeFrequency = fFrequency
+                                tonePlayer.startTone(frequency: fFrequency)
+                            }
+                        }
+                        .onEnded { _ in
+                            activeFrequency = nil
+                            tonePlayer.stopTone()
+                        }
+                )
             }
         }
         .padding()
