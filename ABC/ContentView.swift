@@ -46,12 +46,11 @@ class TonePlayer: ObservableObject {
             return
         }
 
-        if currentFrequency == frequency && isPlaying { return }
-
         stopTone()
 
         let sampleRate = audioFormat.sampleRate
-        let frameCount = AVAudioFrameCount(sampleRate)
+        let duration = 0.2
+        let frameCount = AVAudioFrameCount(duration * sampleRate)
 
         guard let buffer = AVAudioPCMBuffer(pcmFormat: audioFormat,
                                             frameCapacity: frameCount) else { return }
@@ -71,17 +70,15 @@ class TonePlayer: ObservableObject {
             }
         }
 
-        player.scheduleBuffer(buffer, at: nil, options: [.loops, .interrupts], completionHandler: nil)
+        // 循环播放，直到主动停止
+        player.scheduleBuffer(buffer, at: nil, options: [.loops], completionHandler: nil)
         player.play()
-
-        currentFrequency = frequency
-        isPlaying = true
     }
 
     func stopTone() {
+        guard player.isPlaying else { return }
         player.stop()
-        currentFrequency = nil
-        isPlaying = false
+        player.reset()
     }
 }
 
@@ -101,52 +98,48 @@ struct ContentView: View {
                 .fontWeight(.semibold)
 
             HStack(spacing: 24) {
-                Button(action: {}) {
-                    VStack(spacing: 8) {
-                        Text("G")
-                            .font(.largeTitle.bold())
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 120)
+                ToneButton(title: "G") {
+                    tonePlayer.startTone(frequency: gFrequency)
+                } onRelease: {
+                    tonePlayer.stopTone()
                 }
-                .buttonStyle(.borderedProminent)
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { _ in
-                            if activeFrequency != gFrequency {
-                                activeFrequency = gFrequency
-                                tonePlayer.startTone(frequency: gFrequency)
-                            }
-                        }
-                        .onEnded { _ in
-                            activeFrequency = nil
-                            tonePlayer.stopTone()
-                        }
-                )
 
-                Button(action: {}) {
-                    VStack(spacing: 8) {
-                        Text("F")
-                            .font(.largeTitle.bold())
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 120)
+                ToneButton(title: "F") {
+                    tonePlayer.startTone(frequency: fFrequency)
+                } onRelease: {
+                    tonePlayer.stopTone()
                 }
-                .buttonStyle(.borderedProminent)
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { _ in
-                            if activeFrequency != fFrequency {
-                                activeFrequency = fFrequency
-                                tonePlayer.startTone(frequency: fFrequency)
-                            }
-                        }
-                        .onEnded { _ in
-                            activeFrequency = nil
-                            tonePlayer.stopTone()
-                        }
-                )
             }
         }
         .padding()
+    }
+}
+
+struct ToneButton: View {
+    let title: String
+    let onPress: () -> Void
+    let onRelease: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text(title)
+                .font(.largeTitle.bold())
+        }
+        .frame(maxWidth: .infinity, minHeight: 120)
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(.ultraThickMaterial)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(.primary.opacity(0.1), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .onLongPressGesture(minimumDuration: 0, maximumDistance: 80, pressing: { pressing in
+            if pressing {
+                onPress()
+            } else {
+                onRelease()
+            }
+        }, perform: { })
     }
 }
 
