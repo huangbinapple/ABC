@@ -7,6 +7,8 @@ class TonePlayer: ObservableObject {
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private let audioFormat: AVAudioFormat
+    private var currentFrequency: Double?
+    @Published private(set) var isPlaying = false
 
     init() {
         // 1. iOS 上必须先配置 AVAudioSession
@@ -84,13 +86,14 @@ class TonePlayer: ObservableObject {
 
 struct ContentView: View {
     @StateObject private var tonePlayer = TonePlayer()
+    @State private var activeFrequency: Double?
 
     private let gFrequency = 392.0  // G4
     private let fFrequency = 349.23 // F4
 
     var body: some View {
         VStack(spacing: 32) {
-            Text("Tap to play notes")
+            Text("Press and hold to play notes")
                 .font(.title2)
                 .fontWeight(.semibold)
 
