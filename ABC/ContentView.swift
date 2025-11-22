@@ -38,13 +38,16 @@ class TonePlayer: ObservableObject {
         }
     }
 
-    func playTone(frequency: Double, duration: Double = 0.6) {
+    func startTone(frequency: Double) {
         guard engine.isRunning else {
             print("Engine is not running")
             return
         }
 
+        stopTone()
+
         let sampleRate = audioFormat.sampleRate
+        let duration = 0.2
         let frameCount = AVAudioFrameCount(duration * sampleRate)
 
         guard let buffer = AVAudioPCMBuffer(pcmFormat: audioFormat,
@@ -65,12 +68,15 @@ class TonePlayer: ObservableObject {
             }
         }
 
-        // 安排播放
-        player.scheduleBuffer(buffer, at: nil, options: .interrupts, completionHandler: nil)
+        // 循环播放，直到主动停止
+        player.scheduleBuffer(buffer, at: nil, options: [.loops], completionHandler: nil)
+        player.play()
+    }
 
-        if !player.isPlaying {
-            player.play()
-        }
+    func stopTone() {
+        guard player.isPlaying else { return }
+        player.stop()
+        player.reset()
     }
 }
 
@@ -89,34 +95,48 @@ struct ContentView: View {
                 .fontWeight(.semibold)
 
             HStack(spacing: 24) {
-                Button {
-                    tonePlayer.playTone(frequency: gFrequency)
-                } label: {
-                    VStack(spacing: 8) {
-                        Text("G")
-                            .font(.largeTitle.bold())
-                        Text("+")
-                            .font(.headline)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 120)
+                ToneButton(title: "G") {
+                    tonePlayer.startTone(frequency: gFrequency)
+                } onRelease: {
+                    tonePlayer.stopTone()
                 }
-                .buttonStyle(.borderedProminent)
 
-                Button {
-                    tonePlayer.playTone(frequency: fFrequency)
-                } label: {
-                    VStack(spacing: 8) {
-                        Text("F")
-                            .font(.largeTitle.bold())
-                        Text("-")
-                            .font(.headline)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 120)
+                ToneButton(title: "F") {
+                    tonePlayer.startTone(frequency: fFrequency)
+                } onRelease: {
+                    tonePlayer.stopTone()
                 }
-                .buttonStyle(.borderedProminent)
             }
         }
         .padding()
+    }
+}
+
+struct ToneButton: View {
+    let title: String
+    let onPress: () -> Void
+    let onRelease: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text(title)
+                .font(.largeTitle.bold())
+        }
+        .frame(maxWidth: .infinity, minHeight: 120)
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(.ultraThickMaterial)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(.primary.opacity(0.1), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .onLongPressGesture(minimumDuration: 0, maximumDistance: 80, pressing: { pressing in
+            if pressing {
+                onPress()
+            } else {
+                onRelease()
+            }
+        }, perform: { })
     }
 }
 
